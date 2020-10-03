@@ -1,6 +1,7 @@
 const request = require('request');
 const express = require('express');
 const bodyParser = require('body-parser');
+const rp = require('request-promise');
 
 const app = express().use(bodyParser.json());
 
@@ -15,7 +16,22 @@ app.get('/ping', (req, res) => {
     res.status(200).send('pong');
 });
 
-// webhook verification
+// simple test API
+app.get('/test-wk-query', async (req, res) => {
+    const token = req && req.query && req.query.token;
+
+    try {
+        const review_count = await query_reviews(token);
+        const msg = `New reviews in this hour: ${review_count}`;
+        res.status(200).send(msg);
+    }
+    catch (e) {
+        console.log(e);
+        res.status(400).send(e.toString());
+    }
+});
+
+// messenger verification webhook
 app.get('/webhook', (req, res) => {
     // parse the query params
     let mode = req.query['hub.mode'];
@@ -36,8 +52,8 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// webhook data
-app.post('/webhook', (req, res) => {
+// messenger data webhook
+app.post('/webhook', async (req, res) => {
     let body = req.body;
 
     // checks this is an event from a page subscription
@@ -57,38 +73,34 @@ app.post('/webhook', (req, res) => {
             // pass the event to the appropriate handler function
             if (webhook_event.message) {
                 handleMessage(sender_psid, webhook_event.message);
-            } else if (webhook_event.postback) {
-                handlePostback(sender_psid, webhook_event.postback);
             }
         });
 
         // returns a '200 OK' response to all requests
         res.status(200).send('EVENT_RECEIVED');
     } else {
-        // Returns a '404 Not Found' if event is not from a page subscription
+        // returns a '404 Not Found' if event is not from a page subscription
         res.sendStatus(404);
     }
 });
 
 // handles message events
-function handleMessage(sender_psid, received_message) {
+async function handleMessage(sender_psid, received_message) {
     // check if the message contains text
-    if (received_message.text) {
-        // TODO: validate token
-        query_user(received_message.text, function (num_reviews) {
-            const response = {
-                "text": `Number of new reviews in this hour: "${num_reviews}".`
-            };
-
-            // sends the response message
-            callSendAPI(sender_psid, response);
-        })
+    if (!received_message.text) {
+        callSendAPI(sender_psid, 'Sorry, I can only process simple text messages.');
     }
-}
 
-// handles messaging_postbacks events
-function handlePostback(sender_psid, received_postback) {
-    // TODO
+    // query WaniKani API
+    try {
+        const token = received_message.text;
+        const review_count = await query_reviews(token);
+        callSendAPI(sender_psid, `New reviews in this hour: ${review_count}`);
+    }
+    catch (e) {
+        console.log(e);
+        callSendAPI(sender_psid, e.toString());
+    }
 }
 
 function callSendAPI(sender_psid, response) {
@@ -97,7 +109,9 @@ function callSendAPI(sender_psid, response) {
         "recipient": {
             "id": sender_psid
         },
-        "message": response
+        "message": {
+            text: response,
+        }
     }
 
     // send the HTTP request to the Messenger Platform
@@ -121,42 +135,59 @@ function date_range_now() {
     from.setSeconds(0);
     from.setMinutes(0);
 
-    // from.setHours(from.getHours() + 9);
-
     let to = new Date(from.getTime());
     to.setMinutes(59);
 
     return [from, to];
 }
 
-async function query_user(api_token, callback) {
+async function query_reviews(wk_api_token) {
+    // validate token
+    if (!wk_api_token) {
+        throw new Error('No token provided');
+    }
+
+    if (!wk_api_token.match(/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/)) {
+        throw new Error('That does not look like a valid WaniKani secret API token (v2)');
+    }
+
+    // compose query
     const [date_from, date_to] = date_range_now();
 
-    const auth = {
-        'bearer': api_token,
+    var options = {
+        method: 'GET',
+        uri: 'https://api.wanikani.com/v2/assignments',
+        auth: { bearer: wk_api_token, },
+        qs: {
+            available_after: date_from.toISOString(),
+            available_before: date_to.toISOString(),
+            in_review: true,
+        },
+        json: true,
     };
 
-    const url = 'https://api.wanikani.com/v2/';
-    const endpoint = 'assignments';
-    const query_params = `?available_after=${date_from.toISOString()}&available_before=${date_to.toISOString()}&in_review=true`;
-    const full_url = url + endpoint + query_params;
+    try {
+        // query API
+        const info = await rp(options);
 
-    console.log(`Querying ${full_url} ...`);
-
-    request.get(full_url, { auth }, function (error, response, body) {
-        if (error) {
-            console.error('error:', error);
-            callback(-1);
-            return;
+        // check response format
+        if (!info || !info.data) {
+            const error = `Unexpected response format! Got: ${info}`;
+            console.err(error);
+            throw new Error(error);
         }
 
-        if (!response || response.statusCode != 200) {
-            console.log('statusCode:', response && response.statusCode);
-            callback(-1);
-            return;
+        return info.data.length;
+    }
+    catch (e) {
+        // wrong token
+        if (e.statusCode == 401) {
+            throw new Error('Unable to connect to WaniKani API: Unauthorized');
         }
 
-        const info = JSON.parse(body);
-        callback(info.data.length);
-    });
+        // other error
+        const error = `Unexpected error: ${e.message}`;
+        console.err(error);
+        throw new Error(error);
+    }
 }
