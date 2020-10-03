@@ -1,5 +1,15 @@
 const request = require('request');
-const rp = require('request-promise');
+const express = require('express');
+const bodyParser = require('body-parser');
+
+const app = express().use(bodyParser.json());
+
+const PORT = process.env.PORT || 1337;
+app.listen(PORT, () => console.log(`webhook is listening on port ${PORT}`));
+
+app.get('/ping', (req, res) => {
+    res.status(200).send('pong');
+});
 
 function date_range_now() {
     let from = new Date();
