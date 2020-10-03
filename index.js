@@ -146,7 +146,13 @@ async function query_user(api_token, callback) {
     request.get(full_url, { auth }, function (error, response, body) {
         if (error) {
             console.error('error:', error);
+            callback(-1);
+            return;
+        }
+
+        if (!response || response.statusCode != 200) {
             console.log('statusCode:', response && response.statusCode);
+            callback(-1);
             return;
         }
 
