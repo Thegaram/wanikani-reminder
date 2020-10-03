@@ -14,7 +14,7 @@ function msToNextHour() {
 }
 
 function startLoop() {
-    setTimeout(() => {
+    setTimeout(async () => {
         notifyAll()
         notifyLoop()
     }, msToNextHour() + 1000);
@@ -25,7 +25,7 @@ function notifyLoop() {
     setInterval(notifyAll, 60 * 60 * 1000);
 }
 
-function notifyAll() {
+async function notifyAll() {
     for (let [psid, token] of DB) {
         // TODO: do asynchronously
         try {
