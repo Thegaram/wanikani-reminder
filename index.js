@@ -72,18 +72,18 @@ app.post('/webhook', (req, res) => {
 
 // handles message events
 function handleMessage(sender_psid, received_message) {
-    let response;
-
     // check if the message contains text
     if (received_message.text) {
-        // create the payload for a basic text message
-        response = {
-            "text": `You sent the message: "${received_message.text}". Now send me an image!`
-        }
-    }
+        // TODO: validate token
+        query_user(received_message.text, function (num_reviews) {
+            const response = {
+                "text": `Number of new reviews in this hour: "${num_reviews}".`
+            };
 
-    // sends the response message
-    callSendAPI(sender_psid, response);
+            // sends the response message
+            callSendAPI(sender_psid, response);
+        })
+    }
 }
 
 // handles messaging_postbacks events
@@ -129,7 +129,7 @@ function date_range_now() {
     return [from, to];
 }
 
-async function query_user(api_token) {
+async function query_user(api_token, callback) {
     const [date_from, date_to] = date_range_now();
 
     const auth = {
@@ -143,20 +143,10 @@ async function query_user(api_token) {
 
     console.log(`Querying ${full_url} ...`);
 
-    // console.log(`date_from = ${date_from}; date_to = ${date_to}`);
-    // console.log(`https://api.wanikani.com/v2/assignments?`);
-
     request.get(full_url, { auth }, function (error, response, body) {
         console.error('error:', error);
         console.log('statusCode:', response && response.statusCode);
-
         const info = JSON.parse(body);
-        console.log(info.data.length);
+        callback(info.data.length);
     });
 }
-
-async function main() {
-    query_user('535d5e08-12e9-450b-98e1-152ab2685e8c');
-}
-
-main()
