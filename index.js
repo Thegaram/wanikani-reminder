@@ -3,12 +3,13 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const rp = require('request-promise');
 
-const app = express().use(bodyParser.json());
-
 const PORT = process.env.PORT || 1337;
 const VERIFY_TOKEN = process.env.MESSENGER_VERIFY_TOKEN;
 const PAGE_ACCESS_TOKEN = process.env.MESSENGER_PAGE_ACCESS_TOKEN;
 
+const DB = new Map();
+
+const app = express().use(bodyParser.json());
 app.listen(PORT, () => console.log(`webhook is listening on port ${PORT}`));
 
 // healthcheck
@@ -84,22 +85,81 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// handles message events
-async function handleMessage(sender_psid, received_message) {
-    // check if the message contains text
-    if (!received_message.text) {
-        callSendAPI(sender_psid, 'Sorry, I can only process simple text messages.');
+async function handleMessage(psid, msg) {
+    if (!msg || !msg.text) {
+        callSendAPI(psid, 'Sorry, I can only process simple text messages.');
     }
 
-    // query WaniKani API
     try {
-        const token = received_message.text;
-        const review_count = await query_reviews(token);
-        callSendAPI(sender_psid, `New reviews in this hour: ${review_count}`);
+        const response = await reminderAPI(psid, msg.text);
+        callSendAPI(psid, response);
+    }
+    catch (e) {
+        console.err(e.toString());
+        callSendAPI(psid, e.toString());
+    }
+}
+
+// simple test API
+app.get('/test-api', async (req, res) => {
+    const msg = req && req.query && req.query.msg;
+
+    try {
+        const response = await reminderAPI(1, msg);
+        res.status(200).send(response);
     }
     catch (e) {
         console.log(e);
-        callSendAPI(sender_psid, e.toString());
+        res.status(400).send(e.toString());
+    }
+});
+
+// facebook messenger dialogue implementation
+async function reminderAPI(psid, message) {
+    if (!message) {
+        return 'Empty message';
+    }
+
+    // query API
+    if (message.match(/^query/)) {
+        const matches = message.match(/^query ([a-zA-Z0-9\-]+)/);
+
+        if (!matches || matches.length < 2) {
+            return 'Usage: query [wanikani-access-token]';
+        }
+
+        const token = matches[1];
+        const review_count = await query_reviews(token);
+        return `New reviews in this hour: ${review_count}`;
+    }
+
+    // subscribe API
+    else if (message.match(/^subscribe/)) {
+        const matches = message.match(/^subscribe ([a-zA-Z0-9\-]+)/);
+
+        if (!matches || matches.length < 2) {
+            return 'Usage: subscribe [wanikani-access-token]';
+        }
+
+        const token = matches[1];
+        const _ = await query_reviews(token);
+        DB.set(psid, token);
+        return 'Subscribed successfully!';
+    }
+
+    // unsubscribe API
+    else if (message.match(/^unsubscribe/)) {
+        if (!DB.has(psid)) {
+            return 'Not subscribed';
+        }
+
+        DB.delete(psid);
+        return 'Unsubscribed successfully!';
+    }
+
+    // help API
+    else {
+        return 'Try one of the following commands: query, subscribe, unsubscribe';
     }
 }
 
@@ -148,7 +208,7 @@ async function query_reviews(wk_api_token) {
     }
 
     if (!wk_api_token.match(/^\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$/)) {
-        throw new Error('That does not look like a valid WaniKani secret API token (v2)');
+        throw new Error(`'${wk_api_token}' does not look like a valid WaniKani secret API token (v2)`);
     }
 
     // compose query
