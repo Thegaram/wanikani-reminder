@@ -144,8 +144,12 @@ async function query_user(api_token, callback) {
     console.log(`Querying ${full_url} ...`);
 
     request.get(full_url, { auth }, function (error, response, body) {
-        console.error('error:', error);
-        console.log('statusCode:', response && response.statusCode);
+        if (error) {
+            console.error('error:', error);
+            console.log('statusCode:', response && response.statusCode);
+            return;
+        }
+
         const info = JSON.parse(body);
         callback(info.data.length);
     });
