@@ -5,10 +5,10 @@ const bodyParser = require('body-parser');
 const app = express().use(bodyParser.json());
 
 const PORT = process.env.PORT || 1337;
-app.listen(PORT, () => console.log(`webhook is listening on port ${PORT}`));
-
 const VERIFY_TOKEN = process.env.MESSENGER_VERIFY_TOKEN;
-console.log(`VERIFY TOKEN = ${VERIFY_TOKEN}`);
+const PAGE_ACCESS_TOKEN = process.env.MESSENGER_PAGE_ACCESS_TOKEN;
+
+app.listen(PORT, () => console.log(`webhook is listening on port ${PORT}`));
 
 // healthcheck
 app.get('/ping', (req, res) => {
@@ -48,6 +48,10 @@ app.post('/webhook', (req, res) => {
             // will only ever contain one message, so we get index 0
             let webhook_event = entry.messaging[0];
             console.log(webhook_event);
+
+            // get the sender PSID
+            let sender_psid = webhook_event.sender.id;
+            console.log('Sender PSID: ' + sender_psid);
         });
 
         // returns a '200 OK' response to all requests
