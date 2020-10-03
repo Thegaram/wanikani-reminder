@@ -52,6 +52,14 @@ app.post('/webhook', (req, res) => {
             // get the sender PSID
             let sender_psid = webhook_event.sender.id;
             console.log('Sender PSID: ' + sender_psid);
+
+            // check if the event is a message or postback and
+            // pass the event to the appropriate handler function
+            if (webhook_event.message) {
+                handleMessage(sender_psid, webhook_event.message);
+            } else if (webhook_event.postback) {
+                handlePostback(sender_psid, webhook_event.postback);
+            }
         });
 
         // returns a '200 OK' response to all requests
@@ -61,6 +69,51 @@ app.post('/webhook', (req, res) => {
         res.sendStatus(404);
     }
 });
+
+// handles message events
+function handleMessage(sender_psid, received_message) {
+    let response;
+
+    // check if the message contains text
+    if (received_message.text) {
+        // create the payload for a basic text message
+        response = {
+            "text": `You sent the message: "${received_message.text}". Now send me an image!`
+        }
+    }
+
+    // sends the response message
+    callSendAPI(sender_psid, response);
+}
+
+// handles messaging_postbacks events
+function handlePostback(sender_psid, received_postback) {
+    // TODO
+}
+
+function callSendAPI(sender_psid, response) {
+    // construct the message body
+    let request_body = {
+        "recipient": {
+            "id": sender_psid
+        },
+        "message": response
+    }
+
+    // send the HTTP request to the Messenger Platform
+    request({
+        "uri": "https://graph.facebook.com/v2.6/me/messages",
+        "qs": { "access_token": PAGE_ACCESS_TOKEN },
+        "method": "POST",
+        "json": request_body
+    }, (err, res, body) => {
+        if (!err) {
+            console.log('message sent!')
+        } else {
+            console.error("Unable to send message:" + err);
+        }
+    });
+}
 
 function date_range_now() {
     let from = new Date();
