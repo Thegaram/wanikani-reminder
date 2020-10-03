@@ -9,6 +9,39 @@ const PAGE_ACCESS_TOKEN = process.env.MESSENGER_PAGE_ACCESS_TOKEN;
 
 const DB = new Map();
 
+function msToNextHour() {
+    return 3600000 - new Date().getTime() % 3600000;
+}
+
+function startLoop() {
+    setTimeout(() => {
+        notifyAll()
+        notifyLoop()
+    }, msToNextHour() + 1000);
+}
+
+function notifyLoop() {
+    // run hourly
+    setInterval(notifyAll, 60 * 60 * 1000);
+}
+
+function notifyAll() {
+    for (let [psid, token] of DB) {
+        // TODO: do asynchronously
+        try {
+            const review_count = await query_reviews(token);
+            const msg = `New reviews in this hour: ${review_count}`;
+            callSendAPI(psid, msg);
+        }
+        catch (e) {
+            console.err(e.toString());
+            callSendAPI(psid, e.toString());
+        }
+    }
+}
+
+startLoop()
+
 const app = express().use(bodyParser.json());
 app.listen(PORT, () => console.log(`webhook is listening on port ${PORT}`));
 
@@ -147,19 +180,19 @@ async function reminderAPI(psid, message) {
         return 'Subscribed successfully!';
     }
 
-    // unsubscribe API
-    else if (message.match(/^unsubscribe/)) {
+    // cancel API
+    else if (message.match(/^cancel/)) {
         if (!DB.has(psid)) {
             return 'Not subscribed';
         }
 
         DB.delete(psid);
-        return 'Unsubscribed successfully!';
+        return 'Subscription cancelled!';
     }
 
     // help API
     else {
-        return 'Try one of the following commands: query, subscribe, unsubscribe';
+        return 'Try one of the following commands: query, subscribe, cancel';
     }
 }
 
